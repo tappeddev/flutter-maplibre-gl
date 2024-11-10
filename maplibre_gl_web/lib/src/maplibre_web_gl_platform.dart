@@ -70,6 +70,7 @@ class MapLibreMapController extends MapLibrePlatform
           bearing: camera['bearing'],
           pitch: camera['tilt'],
           attributionControl: false, //avoid duplicate control
+          preserveDrawingBuffer: true,
         ),
       );
       _map.on('load', _onStyleLoaded);
