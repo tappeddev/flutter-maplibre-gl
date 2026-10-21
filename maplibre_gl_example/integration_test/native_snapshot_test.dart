@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:maplibre_gl/maplibre_gl.dart' hide Error;
@@ -108,12 +109,50 @@ void main() {
       );
       image.dispose();
       codec.dispose();
+      await _withFrames(
+        tester,
+        expectLater(
+          controller.takeSnapshot(width: 0, height: 0),
+          throwsA(
+            isA<PlatformException>().having(
+              (e) => e.code,
+              'code',
+              'INVALID_SIZE',
+            ),
+          ),
+        ),
+      );
+
+      // The native renderer may finish before disposal wins. Either result must
+      // settle promptly; a missing callback must not leave the Dart future open.
+      Object? disposalError;
+      final removing = controller.takeSnapshot().then<void>(
+        (_) {},
+        onError: (Object error, StackTrace stack) {
+          disposalError = error;
+        },
+      );
       await tester.pumpWidget(const SizedBox());
+      await _withFrames(tester, removing, timeout: const Duration(seconds: 2));
+      if (disposalError != null) {
+        expect(
+          disposalError,
+          isA<PlatformException>().having(
+            (e) => e.code,
+            'code',
+            'SNAPSHOT_CANCELLED',
+          ),
+        );
+      }
     },
   );
 }
 
-Future<T> _withFrames<T>(WidgetTester tester, Future<T> future) async {
+Future<T> _withFrames<T>(
+  WidgetTester tester,
+  Future<T> future, {
+  Duration timeout = const Duration(seconds: 30),
+}) async {
   var done = false;
   T? value;
   Object? error;
@@ -131,7 +170,7 @@ Future<T> _withFrames<T>(WidgetTester tester, Future<T> future) async {
       },
     ),
   );
-  final deadline = DateTime.now().add(const Duration(seconds: 30));
+  final deadline = DateTime.now().add(timeout);
   while (!done) {
     if (DateTime.now().isAfter(deadline))
       fail('Native map operation timed out');

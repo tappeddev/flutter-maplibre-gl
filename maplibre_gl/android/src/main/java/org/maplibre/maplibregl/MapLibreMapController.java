@@ -16,6 +16,8 @@ import android.graphics.PointF;
 import android.graphics.RectF;
 import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.Pair;
@@ -213,6 +215,8 @@ final class MapLibreMapController
   private int myLocationRenderMode = 0;
   private LocationEngineFactory myLocationEngineFactory = new LocationEngineFactory();
   private boolean disposed = false;
+  private final Handler snapshotHandler = new Handler(Looper.getMainLooper());
+  private MethodChannel.Result pendingSnapshotResult;
   private boolean dragEnabled = true;
   private boolean featureTapsTriggersMapClick = false;
   // Tint of the attribution (i) button, or null to leave the MapLibre SDK
@@ -3096,7 +3100,17 @@ final class MapLibreMapController
           result.error("INVALID_SIZE", "Snapshot dimensions must be positive", null);
           break;
         }
-        mapLibreMap.snapshot(bitmap -> {
+        cancelSnapshot("Snapshot was replaced");
+        pendingSnapshotResult = result;
+        snapshotHandler.postDelayed(() -> {
+          if (pendingSnapshotResult != result) return;
+          pendingSnapshotResult = null;
+          result.error("SNAPSHOT_ERROR", "Map did not finish rendering within 10 seconds", null);
+        }, 10000);
+        mapLibreMap.snapshot(bitmap -> snapshotHandler.post(() -> {
+          if (disposed || pendingSnapshotResult != result) return;
+          pendingSnapshotResult = null;
+          snapshotHandler.removeCallbacksAndMessages(null);
           Bitmap output = bitmap;
           if (bitmap.getWidth() != snapshotWidth || bitmap.getHeight() != snapshotHeight) {
             output = Bitmap.createScaledBitmap(bitmap, snapshotWidth, snapshotHeight, true);
@@ -3105,7 +3119,7 @@ final class MapLibreMapController
           output.compress(Bitmap.CompressFormat.PNG, 100, stream);
           if (output != bitmap) output.recycle();
           result.success(stream.toByteArray());
-        });
+        }));
         break;
       }
       default:
@@ -3242,6 +3256,15 @@ final class MapLibreMapController
     }
   }
 
+  private void cancelSnapshot(String message) {
+    snapshotHandler.removeCallbacksAndMessages(null);
+    if (pendingSnapshotResult != null) {
+      MethodChannel.Result request = pendingSnapshotResult;
+      pendingSnapshotResult = null;
+      request.error("SNAPSHOT_CANCELLED", message, null);
+    }
+  }
+
   private void moveCamera(CameraUpdate cameraUpdate, MethodChannel.Result result) {
     if (cameraUpdate != null) {
       // camera transformation not handled yet
@@ -3318,6 +3341,7 @@ final class MapLibreMapController
    * MapLibre tracking issue</a>.
    */
   private void destroyMapViewIfNecessary() {
+    cancelSnapshot("Map was destroyed");
     if (mapView == null) {
       return;
     }
