@@ -2416,9 +2416,9 @@ class MapLibreMapController extends ChangeNotifier {
   /// This works on all platforms (Android, iOS, and Web).
   ///
   /// If [width] and [height] are provided, the snapshot is rendered at that
-  /// size (in logical pixels) using an offscreen renderer while preserving the
-  /// current camera position and style. When omitted the snapshot matches the
-  /// current map view size.
+  /// size while preserving the current viewport and style. On native platforms
+  /// this captures the existing renderer, including runtime layers and images.
+  /// When omitted the snapshot matches the current map view size.
   Future<Uint8List> takeSnapshot({int? width, int? height}) {
     return _maplibrePlatform.takeSnapshot(width: width, height: height);
   }

@@ -91,8 +91,6 @@ import org.maplibre.geojson.Feature;
 import org.maplibre.geojson.FeatureCollection;
 import org.maplibre.geojson.Point;
 import org.maplibre.android.net.ConnectivityReceiver;
-import org.maplibre.android.snapshotter.MapSnapshot;
-import org.maplibre.android.snapshotter.MapSnapshotter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -243,7 +241,6 @@ final class MapLibreMapController
 
   private LatLng dragOrigin;
   private LatLng dragPrevious;
-  private MapSnapshotter activeSnapshotter;
 
   private Set<String> interactiveFeatureLayerIds;
   private Map<String, FeatureCollection> addedFeaturesByLayer;
@@ -3083,8 +3080,7 @@ final class MapLibreMapController
           result.error("MAP_NOT_READY", "Map is not ready", null);
           break;
         }
-        String styleUrl = mapLibreMap.getStyle() != null ? mapLibreMap.getStyle().getUri() : null;
-        if (styleUrl == null) {
+        if (mapLibreMap.getStyle() == null) {
           result.error("STYLE_NOT_READY", "Map style is not loaded", null);
           break;
         }
@@ -3092,31 +3088,23 @@ final class MapLibreMapController
         Integer width = snapshotArgs != null ? (Integer) snapshotArgs.get("width") : null;
         Integer height = snapshotArgs != null ? (Integer) snapshotArgs.get("height") : null;
 
+        // Capture the existing renderer, preserving inline styles,
+        // runtime GeoJSON layers and images added after the base style loaded.
         int snapshotWidth = width != null ? width : mapView.getWidth();
         int snapshotHeight = height != null ? height : mapView.getHeight();
-
-        MapSnapshotter.Options options = new MapSnapshotter.Options(snapshotWidth, snapshotHeight)
-                .withStyle(styleUrl)
-                .withCameraPosition(mapLibreMap.getCameraPosition());
-        if (activeSnapshotter != null) {
-          activeSnapshotter.cancel();
+        if (snapshotWidth <= 0 || snapshotHeight <= 0) {
+          result.error("INVALID_SIZE", "Snapshot dimensions must be positive", null);
+          break;
         }
-        activeSnapshotter = new MapSnapshotter(context, options);
-        activeSnapshotter.start(new MapSnapshotter.SnapshotReadyCallback() {
-          @Override
-          public void onSnapshotReady(MapSnapshot snapshot) {
-            activeSnapshotter = null;
-            Bitmap bitmap = snapshot.getBitmap();
-            ByteArrayOutputStream stream = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-            result.success(stream.toByteArray());
+        mapLibreMap.snapshot(bitmap -> {
+          Bitmap output = bitmap;
+          if (bitmap.getWidth() != snapshotWidth || bitmap.getHeight() != snapshotHeight) {
+            output = Bitmap.createScaledBitmap(bitmap, snapshotWidth, snapshotHeight, true);
           }
-        }, new MapSnapshotter.ErrorHandler() {
-          @Override
-          public void onError(String error) {
-            activeSnapshotter = null;
-            result.error("SNAPSHOT_ERROR", error, null);
-          }
+          ByteArrayOutputStream stream = new ByteArrayOutputStream();
+          output.compress(Bitmap.CompressFormat.PNG, 100, stream);
+          if (output != bitmap) output.recycle();
+          result.success(stream.toByteArray());
         });
         break;
       }
@@ -3230,10 +3218,6 @@ final class MapLibreMapController
       return;
     }
     disposed = true;
-    if (activeSnapshotter != null) {
-      activeSnapshotter.cancel();
-      activeSnapshotter = null;
-    }
     methodChannel.setMethodCallHandler(null);
     // A map#waitForMap parked while the map was still being built is only ever
     // answered by onMapReady, which will not fire now. Answer it here, or the Dart
