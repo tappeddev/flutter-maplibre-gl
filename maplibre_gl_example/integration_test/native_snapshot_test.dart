@@ -35,10 +35,14 @@ void main() {
                     ),
                     onMapCreated: created.complete,
                     onStyleLoadedCallback: () {
-                      if (!styled.isCompleted) styled.complete();
+                      if (!styled.isCompleted) {
+                        styled.complete();
+                      }
                     },
                     onMapIdle: () {
-                      if (idle != null && !idle!.isCompleted) idle!.complete();
+                      if (idle != null && !idle.isCompleted) {
+                        idle.complete();
+                      }
                     },
                   ),
                 ),
@@ -81,7 +85,7 @@ void main() {
           iconImage: 'snapshot-marker',
         ),
       );
-      await _withFrames(tester, idle!.future);
+      await _withFrames(tester, idle.future);
       final png = await _withFrames(tester, controller.takeSnapshot());
       final codec = await ui.instantiateImageCodec(png);
       final image = (await codec.getNextFrame()).image;
@@ -92,9 +96,12 @@ void main() {
       var red = 0;
       var green = 0;
       for (var i = 0; i < pixels.length; i += 4) {
-        if (pixels[i] > 200 && pixels[i + 1] < 40 && pixels[i + 2] < 40) red++;
-        if (pixels[i] < 40 && pixels[i + 1] > 200 && pixels[i + 2] < 40)
+        if (pixels[i] > 200 && pixels[i + 1] < 40 && pixels[i + 2] < 40) {
+          red++;
+        }
+        if (pixels[i] < 40 && pixels[i + 1] > 200 && pixels[i + 2] < 40) {
           green++;
+        }
       }
       expect(image.width / image.height, closeTo(584 / 291, .01));
       expect(
@@ -172,8 +179,9 @@ Future<T> _withFrames<T>(
   );
   final deadline = DateTime.now().add(timeout);
   while (!done) {
-    if (DateTime.now().isAfter(deadline))
+    if (DateTime.now().isAfter(deadline)) {
       fail('Native map operation timed out');
+    }
     await tester.pump(const Duration(milliseconds: 100));
   }
   if (error != null) Error.throwWithStackTrace(error!, stack!);
