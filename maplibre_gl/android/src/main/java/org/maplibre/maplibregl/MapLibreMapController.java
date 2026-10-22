@@ -16,6 +16,8 @@ import android.graphics.PointF;
 import android.graphics.RectF;
 import android.location.Location;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.Pair;
@@ -91,8 +93,6 @@ import org.maplibre.geojson.Feature;
 import org.maplibre.geojson.FeatureCollection;
 import org.maplibre.geojson.Point;
 import org.maplibre.android.net.ConnectivityReceiver;
-import org.maplibre.android.snapshotter.MapSnapshot;
-import org.maplibre.android.snapshotter.MapSnapshotter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -215,6 +215,10 @@ final class MapLibreMapController
   private int myLocationRenderMode = 0;
   private LocationEngineFactory myLocationEngineFactory = new LocationEngineFactory();
   private boolean disposed = false;
+  private final Handler snapshotHandler = new Handler(Looper.getMainLooper());
+  private MethodChannel.Result pendingSnapshotResult;
+  private SnapshotCaptureQueue snapshotCaptures = new SnapshotCaptureQueue();
+  private Runnable snapshotTimeout;
   private boolean dragEnabled = true;
   private boolean featureTapsTriggersMapClick = false;
   // Tint of the attribution (i) button, or null to leave the MapLibre SDK
@@ -243,7 +247,6 @@ final class MapLibreMapController
 
   private LatLng dragOrigin;
   private LatLng dragPrevious;
-  private MapSnapshotter activeSnapshotter;
 
   private Set<String> interactiveFeatureLayerIds;
   private Map<String, FeatureCollection> addedFeaturesByLayer;
@@ -3083,8 +3086,7 @@ final class MapLibreMapController
           result.error("MAP_NOT_READY", "Map is not ready", null);
           break;
         }
-        String styleUrl = mapLibreMap.getStyle() != null ? mapLibreMap.getStyle().getUri() : null;
-        if (styleUrl == null) {
+        if (mapLibreMap.getStyle() == null) {
           result.error("STYLE_NOT_READY", "Map style is not loaded", null);
           break;
         }
@@ -3092,30 +3094,59 @@ final class MapLibreMapController
         Integer width = snapshotArgs != null ? (Integer) snapshotArgs.get("width") : null;
         Integer height = snapshotArgs != null ? (Integer) snapshotArgs.get("height") : null;
 
+        // Capture the existing renderer, preserving inline styles,
+        // runtime GeoJSON layers and images added after the base style loaded.
         int snapshotWidth = width != null ? width : mapView.getWidth();
         int snapshotHeight = height != null ? height : mapView.getHeight();
-
-        MapSnapshotter.Options options = new MapSnapshotter.Options(snapshotWidth, snapshotHeight)
-                .withStyle(styleUrl)
-                .withCameraPosition(mapLibreMap.getCameraPosition());
-        if (activeSnapshotter != null) {
-          activeSnapshotter.cancel();
+        if (snapshotWidth <= 0 || snapshotHeight <= 0) {
+          result.error("INVALID_SIZE", "Snapshot dimensions must be positive", null);
+          break;
         }
-        activeSnapshotter = new MapSnapshotter(context, options);
-        activeSnapshotter.start(new MapSnapshotter.SnapshotReadyCallback() {
-          @Override
-          public void onSnapshotReady(MapSnapshot snapshot) {
-            activeSnapshotter = null;
-            Bitmap bitmap = snapshot.getBitmap();
-            ByteArrayOutputStream stream = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream);
-            result.success(stream.toByteArray());
-          }
-        }, new MapSnapshotter.ErrorHandler() {
-          @Override
-          public void onError(String error) {
-            activeSnapshotter = null;
-            result.error("SNAPSHOT_ERROR", error, null);
+        cancelSnapshot("Snapshot was replaced");
+        pendingSnapshotResult = result;
+        snapshotTimeout = () -> {
+          if (pendingSnapshotResult != result) return;
+          pendingSnapshotResult = null;
+          snapshotTimeout = null;
+          snapshotCaptures.cancelPending();
+          result.error("SNAPSHOT_ERROR", "Map did not finish rendering within 10 seconds", null);
+        };
+        snapshotHandler.postDelayed(snapshotTimeout, 10000);
+        final SnapshotCaptureQueue captures = snapshotCaptures;
+        captures.replace(() -> {
+          try {
+            mapLibreMap.snapshot(bitmap -> snapshotHandler.post(() -> {
+              try {
+                if (disposed || pendingSnapshotResult != result) return;
+                Bitmap output = bitmap;
+                if (bitmap.getWidth() != snapshotWidth || bitmap.getHeight() != snapshotHeight) {
+                  output = Bitmap.createScaledBitmap(bitmap, snapshotWidth, snapshotHeight, true);
+                }
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                output.compress(Bitmap.CompressFormat.PNG, 100, stream);
+                if (output != bitmap) output.recycle();
+                pendingSnapshotResult = null;
+                clearSnapshotTimeout();
+                result.success(stream.toByteArray());
+              } catch (RuntimeException error) {
+                if (pendingSnapshotResult == result) {
+                  pendingSnapshotResult = null;
+                  clearSnapshotTimeout();
+                  result.error("SNAPSHOT_ERROR", error.getMessage(), null);
+                }
+              } finally {
+                // Do not install the next SDK callback until this one delivered
+                // its frame, even if its Dart result was cancelled or timed out.
+                captures.complete();
+              }
+            }));
+          } catch (RuntimeException error) {
+            if (pendingSnapshotResult == result) {
+              pendingSnapshotResult = null;
+              clearSnapshotTimeout();
+              result.error("SNAPSHOT_ERROR", error.getMessage(), null);
+            }
+            captures.complete();
           }
         });
         break;
@@ -3230,10 +3261,6 @@ final class MapLibreMapController
       return;
     }
     disposed = true;
-    if (activeSnapshotter != null) {
-      activeSnapshotter.cancel();
-      activeSnapshotter = null;
-    }
     methodChannel.setMethodCallHandler(null);
     // A map#waitForMap parked while the map was still being built is only ever
     // answered by onMapReady, which will not fire now. Answer it here, or the Dart
@@ -3255,6 +3282,23 @@ final class MapLibreMapController
       applicationContext.unregisterComponentCallbacks(this);
     } catch (Exception e) {
       // Ignore if already unregistered
+    }
+  }
+
+  private void cancelSnapshot(String message) {
+    clearSnapshotTimeout();
+    snapshotCaptures.cancelPending();
+    if (pendingSnapshotResult != null) {
+      MethodChannel.Result request = pendingSnapshotResult;
+      pendingSnapshotResult = null;
+      request.error("SNAPSHOT_CANCELLED", message, null);
+    }
+  }
+
+  private void clearSnapshotTimeout() {
+    if (snapshotTimeout != null) {
+      snapshotHandler.removeCallbacks(snapshotTimeout);
+      snapshotTimeout = null;
     }
   }
 
@@ -3334,6 +3378,10 @@ final class MapLibreMapController
    * MapLibre tracking issue</a>.
    */
   private void destroyMapViewIfNecessary() {
+    cancelSnapshot("Map was destroyed");
+    // An SDK callback can be suppressed by destruction. A recreated MapView
+    // needs a fresh gate; late callbacks must only finish their original gate.
+    snapshotCaptures = new SnapshotCaptureQueue();
     if (mapView == null) {
       return;
     }

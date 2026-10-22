@@ -8,7 +8,12 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
     private var channel: FlutterMethodChannel?
 
     private var mapView: MLNMapView
-    private var activeSnapshotter: MLNMapSnapshotter?
+    private struct SnapshotRequest {
+        let id = UUID()
+        let size: CGSize
+        let result: FlutterResult
+    }
+    private var pendingSnapshot: SnapshotRequest?
     private var isMapReady = false
     private var dragEnabled = true
     private var featureTapsTriggersMapClick = false
@@ -64,6 +69,7 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         // Drive the view out of its window and drop the remaining references so
         // the engine is reclaimed promptly when the platform view is removed.
         NotificationCenter.default.removeObserver(self)
+        pendingSnapshot?.result(FlutterError(code: "SNAPSHOT_CANCELLED", message: "Map was disposed", details: nil))
         channel?.setMethodCallHandler(nil)
         mapView.delegate = nil
         if let recognizers = mapView.gestureRecognizers {
@@ -1602,7 +1608,7 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
               )
             }
         case "map#takeSnapshot":
-            guard let styleURL = mapView.styleURL else {
+            guard mapView.style != nil else {
                 result(FlutterError(
                     code: "STYLE_NOT_READY",
                     message: "Map style is not loaded",
@@ -1617,46 +1623,49 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
 
             let snapshotWidth = width ?? Int(mapView.bounds.width)
             let snapshotHeight = height ?? Int(mapView.bounds.height)
+            guard snapshotWidth > 0, snapshotHeight > 0,
+                  mapView.bounds.width > 0, mapView.bounds.height > 0 else {
+                result(FlutterError(code: "INVALID_SIZE", message: "Snapshot dimensions must be positive", details: nil))
+                return
+            }
 
-            // Cancel any in-progress snapshot before starting a new one
-            activeSnapshotter?.cancel()
-
-            let size = CGSize(width: snapshotWidth, height: snapshotHeight)
-            let options = MLNMapSnapshotOptions(
-                styleURL: styleURL,
-                camera: mapView.camera,
-                size: size
-            )
-            options.zoomLevel = mapView.zoomLevel
-
-            let snapshotter = MLNMapSnapshotter(options: options)
-            // Store strong reference before starting to avoid deallocation
-            self.activeSnapshotter = snapshotter
-
-            snapshotter.start { [weak self] snapshot, error in
-                self?.activeSnapshotter = nil
-
-                if let error = error {
-                    result(FlutterError(
-                        code: "SNAPSHOT_ERROR",
-                        message: error.localizedDescription,
-                        details: nil
-                    ))
-                    return
-                }
-                guard let snapshot = snapshot,
-                      let pngData = snapshot.image.pngData() else {
-                    result(FlutterError(
-                        code: "SNAPSHOT_ERROR",
-                        message: "Failed to generate snapshot",
-                        details: nil
-                    ))
-                    return
-                }
-                result(FlutterStandardTypedData(bytes: pngData))
+            // Capture the live renderer rather than starting a second map from
+            // styleURL. Inline styles have no loadable URL, and a base style
+            // alone loses runtime GeoJSON layers, annotations and custom images.
+            pendingSnapshot?.result(FlutterError(code: "SNAPSHOT_CANCELLED", message: "Snapshot was replaced", details: nil))
+            let request = SnapshotRequest(size: CGSize(width: snapshotWidth, height: snapshotHeight), result: result)
+            pendingSnapshot = request
+            // Wait for a fully rendered frame, including any newly added
+            // GeoJSON/images and tiles at the final camera position.
+            mapView.triggerRepaint()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self = self, self.pendingSnapshot?.id == request.id else { return }
+                self.pendingSnapshot = nil
+                request.result(FlutterError(code: "SNAPSHOT_ERROR", message: "Map did not finish rendering within 10 seconds", details: nil))
             }
         default:
             result(FlutterMethodNotImplemented)
+        }
+    }
+
+    func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
+        guard fullyRendered, let request = pendingSnapshot else { return }
+        // Capture outside the renderer's current Core Animation transaction.
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.pendingSnapshot?.id == request.id else { return }
+            self.pendingSnapshot = nil
+            let renderer = UIGraphicsImageRenderer(size: request.size)
+            var rendered = false
+            let image = renderer.image { context in
+                context.cgContext.scaleBy(x: request.size.width / mapView.bounds.width,
+                                          y: request.size.height / mapView.bounds.height)
+                rendered = mapView.drawHierarchy(in: mapView.bounds, afterScreenUpdates: true)
+            }
+            if rendered, let bytes = image.pngData() {
+                request.result(FlutterStandardTypedData(bytes: bytes))
+            } else {
+                request.result(FlutterError(code: "SNAPSHOT_ERROR", message: "Failed to capture the map view", details: nil))
+            }
         }
     }
 

@@ -1,3 +1,14 @@
+## Unreleased
+
+- Android: serialize SDK snapshot captures across replacement and timeout so a
+  stale native frame cannot be delivered to a newer Dart request.
+- Android/iOS: capture the current native map renderer for snapshots, including
+  inline styles, runtime GeoJSON layers and custom marker images. iOS waits for
+  a fully rendered frame and reports timeout/cancellation instead of trying to
+  reload an inline style's unsupported URL in a separate snapshotter.
+- Add an off-screen native snapshot integration test that checks rendered route
+  and custom-image pixels on Android and iOS.
+
 ## [0.27.1](https://github.com/maplibre/flutter-maplibre-gl/compare/v0.27.0...v0.27.1)
 
 ### Fixed
