@@ -1,5 +1,7 @@
 ## Unreleased
 
+- Android: serialize SDK snapshot captures across replacement and timeout so a
+  stale native frame cannot be delivered to a newer Dart request.
 - Android/iOS: capture the current native map renderer for snapshots, including
   inline styles, runtime GeoJSON layers and custom marker images. iOS waits for
   a fully rendered frame and reports timeout/cancellation instead of trying to

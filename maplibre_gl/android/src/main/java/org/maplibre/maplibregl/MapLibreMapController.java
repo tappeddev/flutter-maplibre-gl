@@ -217,6 +217,8 @@ final class MapLibreMapController
   private boolean disposed = false;
   private final Handler snapshotHandler = new Handler(Looper.getMainLooper());
   private MethodChannel.Result pendingSnapshotResult;
+  private SnapshotCaptureQueue snapshotCaptures = new SnapshotCaptureQueue();
+  private Runnable snapshotTimeout;
   private boolean dragEnabled = true;
   private boolean featureTapsTriggersMapClick = false;
   // Tint of the attribution (i) button, or null to leave the MapLibre SDK
@@ -3102,24 +3104,51 @@ final class MapLibreMapController
         }
         cancelSnapshot("Snapshot was replaced");
         pendingSnapshotResult = result;
-        snapshotHandler.postDelayed(() -> {
+        snapshotTimeout = () -> {
           if (pendingSnapshotResult != result) return;
           pendingSnapshotResult = null;
+          snapshotTimeout = null;
+          snapshotCaptures.cancelPending();
           result.error("SNAPSHOT_ERROR", "Map did not finish rendering within 10 seconds", null);
-        }, 10000);
-        mapLibreMap.snapshot(bitmap -> snapshotHandler.post(() -> {
-          if (disposed || pendingSnapshotResult != result) return;
-          pendingSnapshotResult = null;
-          snapshotHandler.removeCallbacksAndMessages(null);
-          Bitmap output = bitmap;
-          if (bitmap.getWidth() != snapshotWidth || bitmap.getHeight() != snapshotHeight) {
-            output = Bitmap.createScaledBitmap(bitmap, snapshotWidth, snapshotHeight, true);
+        };
+        snapshotHandler.postDelayed(snapshotTimeout, 10000);
+        final SnapshotCaptureQueue captures = snapshotCaptures;
+        captures.replace(() -> {
+          try {
+            mapLibreMap.snapshot(bitmap -> snapshotHandler.post(() -> {
+              try {
+                if (disposed || pendingSnapshotResult != result) return;
+                Bitmap output = bitmap;
+                if (bitmap.getWidth() != snapshotWidth || bitmap.getHeight() != snapshotHeight) {
+                  output = Bitmap.createScaledBitmap(bitmap, snapshotWidth, snapshotHeight, true);
+                }
+                ByteArrayOutputStream stream = new ByteArrayOutputStream();
+                output.compress(Bitmap.CompressFormat.PNG, 100, stream);
+                if (output != bitmap) output.recycle();
+                pendingSnapshotResult = null;
+                clearSnapshotTimeout();
+                result.success(stream.toByteArray());
+              } catch (RuntimeException error) {
+                if (pendingSnapshotResult == result) {
+                  pendingSnapshotResult = null;
+                  clearSnapshotTimeout();
+                  result.error("SNAPSHOT_ERROR", error.getMessage(), null);
+                }
+              } finally {
+                // Do not install the next SDK callback until this one delivered
+                // its frame, even if its Dart result was cancelled or timed out.
+                captures.complete();
+              }
+            }));
+          } catch (RuntimeException error) {
+            if (pendingSnapshotResult == result) {
+              pendingSnapshotResult = null;
+              clearSnapshotTimeout();
+              result.error("SNAPSHOT_ERROR", error.getMessage(), null);
+            }
+            captures.complete();
           }
-          ByteArrayOutputStream stream = new ByteArrayOutputStream();
-          output.compress(Bitmap.CompressFormat.PNG, 100, stream);
-          if (output != bitmap) output.recycle();
-          result.success(stream.toByteArray());
-        }));
+        });
         break;
       }
       default:
@@ -3257,11 +3286,19 @@ final class MapLibreMapController
   }
 
   private void cancelSnapshot(String message) {
-    snapshotHandler.removeCallbacksAndMessages(null);
+    clearSnapshotTimeout();
+    snapshotCaptures.cancelPending();
     if (pendingSnapshotResult != null) {
       MethodChannel.Result request = pendingSnapshotResult;
       pendingSnapshotResult = null;
       request.error("SNAPSHOT_CANCELLED", message, null);
+    }
+  }
+
+  private void clearSnapshotTimeout() {
+    if (snapshotTimeout != null) {
+      snapshotHandler.removeCallbacks(snapshotTimeout);
+      snapshotTimeout = null;
     }
   }
 
@@ -3342,6 +3379,9 @@ final class MapLibreMapController
    */
   private void destroyMapViewIfNecessary() {
     cancelSnapshot("Map was destroyed");
+    // An SDK callback can be suppressed by destruction. A recreated MapView
+    // needs a fresh gate; late callbacks must only finish their original gate.
+    snapshotCaptures = new SnapshotCaptureQueue();
     if (mapView == null) {
       return;
     }
