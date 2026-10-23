@@ -3,21 +3,36 @@ import MapLibre
 class Convert {
     class func interpretMapLibreMapOptions(options: Any?, delegate: MapLibreMapOptionsSink) {
         guard let options = options as? [String: Any] else { return }
-        if let cameraTargetBounds = options["cameraTargetBounds"] as? [[[Double]]] {
-            delegate
-                .setCameraTargetBounds(bounds: MLNCoordinateBounds.fromArray(cameraTargetBounds[0]))
+        if let cameraTargetBounds = options["cameraTargetBounds"] as? [Any?] {
+            // Handle both [[[Double]]] and [nil] (for unbounded)
+            if let boundsArray = cameraTargetBounds[0] as? [[Double]] {
+                let bounds = MLNCoordinateBounds.fromArray(boundsArray)
+                delegate.setCameraTargetBounds(bounds: bounds)
+            } else {
+                // Unbounded - clear the bounds restriction
+                delegate.setCameraTargetBounds(bounds: nil)
+            }
         }
         if let compassEnabled = options["compassEnabled"] as? Bool {
             delegate.setCompassEnabled(compassEnabled: compassEnabled)
         }
-        if let minMaxZoomPreference = options["minMaxZoomPreference"] as? [Double] {
+        if let minMaxZoomPreference = options["minMaxZoomPreference"] as? [Any] {
+            // Handle both [Double] and [NSNull] (for unbounded zoom)
+            let minZoom: Double? = (minMaxZoomPreference[0] is NSNull) ? nil : minMaxZoomPreference[0] as? Double
+            let maxZoom: Double? = (minMaxZoomPreference[1] is NSNull) ? nil : minMaxZoomPreference[1] as? Double
+
             delegate.setMinMaxZoomPreference(
-                min: minMaxZoomPreference[0],
-                max: minMaxZoomPreference[1]
+                min: minZoom,
+                max: maxZoom
             )
         }
         if let styleString = options["styleString"] as? String {
             delegate.setStyleString(styleString: styleString)
+        }
+        // Parse before myLocationEnabled so the manual location manager is wired
+        // in before `showsUserLocation` is first enabled (SDK ordering rule).
+        if let locationSource = options["locationSource"] as? String {
+            delegate.setLocationSource(token: locationSource)
         }
         if let rotateGesturesEnabled = options["rotateGesturesEnabled"] as? Bool {
             delegate.setRotateGesturesEnabled(rotateGesturesEnabled: rotateGesturesEnabled)
@@ -34,6 +49,9 @@ class Convert {
         if let zoomGesturesEnabled = options["zoomGesturesEnabled"] as? Bool {
             delegate.setZoomGesturesEnabled(zoomGesturesEnabled: zoomGesturesEnabled)
         }
+        if let doubleClickZoomEnabled = options["doubleClickZoomEnabled"] as? Bool {
+            delegate.setDoubleClickZoomEnabled(doubleClickZoomEnabled: doubleClickZoomEnabled)
+        }
         if let myLocationEnabled = options["myLocationEnabled"] as? Bool {
             delegate.setMyLocationEnabled(myLocationEnabled: myLocationEnabled)
         }
@@ -46,6 +64,14 @@ class Convert {
            let renderMode = MyLocationRenderMode(rawValue: myLocationRenderMode)
         {
             delegate.setMyLocationRenderMode(myLocationRenderMode: renderMode)
+        }
+        if let logoEnabled = options["logoEnabled"] as? Bool {
+            delegate.setLogoEnabled(logoEnabled: logoEnabled)
+        }
+        if let logoViewPosition = options["logoViewPosition"] as? UInt,
+           let position = MLNOrnamentPosition(rawValue: logoViewPosition)
+        {
+            delegate.setLogoViewPosition(position: position)
         }
         if let logoViewMargins = options["logoViewMargins"] as? [Double] {
             delegate.setLogoViewMargins(x: logoViewMargins[0], y: logoViewMargins[1])
@@ -68,6 +94,31 @@ class Convert {
            let position = MLNOrnamentPosition(rawValue: attributionButtonPosition)
         {
             delegate.setAttributionButtonPosition(position: position)
+        }
+        if let attributionButtonColor = options["attributionButtonColor"] as? Int {
+            delegate.setAttributionButtonColor(color: attributionButtonColor)
+        }
+        if let featureTapsTriggersMapClick = options["featureTapsTriggersMapClick"] as? Bool {
+            delegate.setFeatureTapsTriggersMapClick(triggers: featureTapsTriggersMapClick)
+        }
+        // iOS serializes as [enableHighAccuracy (0/1), distanceFilter, intervalMs, pulseWindowMs]
+        if let locationEngineProperties = options["locationEngineProperties"] as? [Int],
+           locationEngineProperties.count >= 2
+        {
+            let enableHighAccuracy = locationEngineProperties[0] == 1
+            let distanceFilter = Double(locationEngineProperties[1])
+            let intervalMs = locationEngineProperties.count >= 3
+                ? locationEngineProperties[2]
+                : 0
+            let pulseWindowMs = locationEngineProperties.count >= 4
+                ? locationEngineProperties[3]
+                : MapLibreMapController.defaultPulseWindowMs
+            delegate.setLocationEngineProperties(
+                enableHighAccuracy: enableHighAccuracy,
+                distanceFilter: distanceFilter,
+                intervalMs: intervalMs,
+                pulseWindowMs: pulseWindowMs
+            )
         }
     }
     

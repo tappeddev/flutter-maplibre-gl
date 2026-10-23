@@ -28,11 +28,17 @@ internal interface MapLibreMapOptionsSink {
 
     fun setZoomGesturesEnabled(zoomGesturesEnabled: Boolean)
 
+    fun setDoubleClickZoomEnabled(doubleClickZoomEnabled: Boolean)
+
     fun setMyLocationEnabled(myLocationEnabled: Boolean)
 
     fun setMyLocationTrackingMode(myLocationTrackingMode: Int)
 
     fun setMyLocationRenderMode(myLocationRenderMode: Int)
+
+    fun setLogoEnabled(logoEnabled: Boolean)
+
+    fun setLogoViewGravity(gravity: Int)
 
     fun setLogoViewMargins(x: Int, y: Int)
 
@@ -44,9 +50,17 @@ internal interface MapLibreMapOptionsSink {
 
     fun setAttributionButtonMargins(x: Int, y: Int)
 
+    fun setAttributionButtonColor(color: Int)
+
     fun setLocationEngineProperties(locationEngineRequest: LocationEngineRequest)
+
+    fun setLocationSource(token: String)
 
     fun setForegroundLoadColor(loadColor: Int)
 
     fun setTranslucentTextureSurface(translucentTextureSurface: Boolean)
+
+    fun setFeatureTapsTriggersMapClick(triggers: Boolean)
+
+    fun setUseHybridComposition(useHybridComposition: Boolean)
 }

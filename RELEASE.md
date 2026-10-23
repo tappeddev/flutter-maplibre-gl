@@ -66,20 +66,23 @@ Before changing any versions ensure:
 3. Apply rule above (minor vs patch bump).
 
 ## Update Version Numbers
-Edit `pubspec.yaml` in each package:
-- `maplibre_gl_platform_interface`
-- `maplibre_gl_web`
-- `maplibre_gl`
-
-Ensure internal dependencies point to the new version (same number across all three). Example snippet:
-```yaml
-dependencies:
-  maplibre_gl_platform_interface: ^0.23.0
+Run the bump script from the repository root:
+```bash
+./scripts/bump_version.sh 0.25.0
 ```
+It sets `version:` in every workspace package (`maplibre_gl`, `maplibre_gl_platform_interface`, `maplibre_gl_web`, plus the unpublished `maplibre_gl_example` and `scripts`), moves the internal `maplibre_gl_*` constraints to the new version, and updates the `maplibre_gl: ^x.y.z` install snippets in `README.md` and `website/docs`. Add `--dry-run` to see the edits first.
+
+It then prints which changelogs and which section of the migration guide still need writing, since those need prose and are left to you.
+
+Once the changelogs are written, verify the whole workspace agrees:
+```bash
+./scripts/bump_version.sh --check
+```
+This fails if any package is on a different version, if an internal constraint is stale (which publishes fine but resolves to the previous release), if a changelog has no section for the version, or if a docs snippet still pins the old one.
 
 ## Update the Changelog
 In root `CHANGELOG.md`:
-1. Move items from `Unreleased` (if present) under a new heading: `## 0.23.0 - YYYY-MM-DD`.
+1. Move items from `Unreleased` (if present) under a new heading: `## 0.25.0 - YYYY-MM-DD`.
 2. Group by sections (Suggested):
    - Added
    - Changed
@@ -116,8 +119,8 @@ After the release PR has been merged, create & push the version tag (format `vX.
 ```bash
 git checkout main
 git pull origin main
-git tag v0.23.0
-git push origin v0.23.0
+git tag v0.24.0
+git push origin v0.24.0
 ```
 No further manual publish commands are required unless the pipeline fails. In that case, resolve the issue and re-push (delete & recreate tag only if absolutely necessary and before broad adoption).
 
@@ -140,15 +143,28 @@ If a critical issue is discovered shortly after release:
 - If native SDK version bumps are included, link upstream release notes in the PR description.
 - Run `flutter clean` in example only if weird build artifacts appear (avoid unnecessary noise in instructions).
 
-## Example Flow (Patch Fix)
-```
+## Example Flows
+
+### Patch Fix (Bug Fix)
+```bash
 # After merging a simple fix
-# decide version 0.23.1
-edit pubspecs -> 0.23.1
+# decide version 0.25.1 (was 0.25.0)
+edit pubspecs -> 0.25.1
 update CHANGELOG
-commit & PR -> chore: release 0.23.1
+commit & PR -> chore: release 0.25.1
 merge
-git tag v0.23.1 && push tag
+git tag v0.25.1 && git push origin v0.25.1
+```
+
+### Minor Release (New Feature)
+```bash
+# After merging a new feature
+# decide version 0.25.0 (was 0.24.1)
+edit pubspecs -> 0.25.0
+update CHANGELOG
+commit & PR -> chore: release 0.25.0
+merge
+git tag v0.25.0 && git push origin v0.25.0
 ```
 
 ---

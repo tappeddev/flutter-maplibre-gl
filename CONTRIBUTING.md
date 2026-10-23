@@ -143,6 +143,8 @@ Notes:
 
 If you add new style specification fields, extend the mapping logic in `scripts/lib/conversions.dart` and/or templates under `scripts/templates/`.
 
+`scripts/input/style.json` is a verbatim copy of the upstream release pinned in `scripts/input/style_spec_version.txt`, so never edit it by hand: `melos run check-style-spec` fails on any drift, in CI too. To move to a newer spec release, run `melos run update-style-spec` (or `dart run lib/check_style_spec.dart --update=<version>` from `scripts/` for a specific one) and then `melos run generate`. A weekly workflow does the same and opens the PR for you.
+
 ## Pull Request Checklist
 Before marking your PR ready for review, verify:
 - [ ] Example app updated (if API / behavior change)
@@ -163,12 +165,14 @@ Found a vulnerability or sensitive exposure vector?
 ## Release process (Maintainers)
 A high-level outline (subject to change):
 1. Ensure `main` (or release branch) is green (CI, tests, analyzer).
-2. Update package versions & root/individual `CHANGELOG.md` sections.
-3. Tag the release (`vX.Y.Z`) and publish packages to pub.dev in dependency order.
+2. Update package versions & root/individual `CHANGELOG.md` sections following the pre-1.0 versioning policy in [RELEASE.md](RELEASE.md):
+   - **MINOR** version for breaking changes, significant features, or new functionality
+   - **PATCH** version for backward-compatible bug fixes
+3. Tag the release (`v0.X.Y`) and publish packages to pub.dev in dependency order.
 4. Merge back any release branch into `main`.
 5. Announce in discussions (optional).
 
-For more information, see [RELEASE](RELEASE.md) instructions.
+For more information, see [RELEASE.md](RELEASE.md) instructions.
 
 ## Community epectations
 Be respectful and constructive. We follow the project's `CODE_OF_CONDUCT.md`. Harassment, discrimination, or unprofessional behavior is not tolerated.

@@ -15,9 +15,9 @@ class LatLng {
   /// The longitude is normalized to the half-open interval from -180.0
   /// (inclusive) to +180.0 (exclusive)
   const LatLng(double latitude, double longitude)
-      : latitude =
-            (latitude < -90.0 ? -90.0 : (90.0 < latitude ? 90.0 : latitude)),
-        longitude = (longitude + 180.0) % 360.0 - 180.0;
+    : latitude =
+          (latitude < -90.0 ? -90.0 : (90.0 < latitude ? 90.0 : latitude)),
+      longitude = (longitude + 180.0) % 360.0 - 180.0;
 
   /// The latitude in degrees between -90.0 and 90.0, both inclusive.
   final double latitude;
@@ -41,7 +41,10 @@ class LatLng {
     return <double>[longitude, latitude];
   }
 
-  LatLng._fromJson(List<dynamic> json) : this(json[0], json[1]);
+  /// Values that cross a JSON boundary lose their `double` type when they
+  /// have no fractional part (60.0 is written as `60`), so accept any [num].
+  LatLng._fromJson(List<dynamic> json)
+    : this((json[0] as num).toDouble(), (json[1] as num).toDouble());
 
   @override
   String toString() => 'LatLng($latitude, $longitude)';
@@ -72,7 +75,7 @@ class LatLngBounds {
   /// The latitude of the southwest corner cannot be larger than the
   /// latitude of the northeast corner.
   LatLngBounds({required this.southwest, required this.northeast})
-      : assert(southwest.latitude <= northeast.latitude);
+    : assert(southwest.latitude <= northeast.latitude);
 
   /// The southwest corner of the rectangle.
   final LatLng southwest;
@@ -89,16 +92,19 @@ class LatLngBounds {
   /// and `northeast` (upper-right corner).
   ///
   bool contains(LatLng point) {
-    final isLatitudeInBounds = point.latitude >= southwest.latitude &&
+    final isLatitudeInBounds =
+        point.latitude >= southwest.latitude &&
         point.latitude <= northeast.latitude;
 
     final bool isLongitudeInBounds;
 
     if (southwest.longitude <= northeast.longitude) {
-      isLongitudeInBounds = point.longitude >= southwest.longitude &&
+      isLongitudeInBounds =
+          point.longitude >= southwest.longitude &&
           point.longitude <= northeast.longitude;
     } else {
-      isLongitudeInBounds = point.longitude >= southwest.longitude ||
+      isLongitudeInBounds =
+          point.longitude >= southwest.longitude ||
           point.longitude <= northeast.longitude;
     }
     return isLatitudeInBounds && isLongitudeInBounds;
@@ -155,7 +161,7 @@ class LatLngQuad {
       topLeft.toJson(),
       topRight.toJson(),
       bottomRight.toJson(),
-      bottomLeft.toJson()
+      bottomLeft.toJson(),
     ];
   }
 
@@ -216,15 +222,84 @@ class UserLocation {
   /// The heading of the user location, null if not available.
   final UserHeading? heading;
 
-  const UserLocation(
-      {required this.position,
-      required this.altitude,
-      required this.bearing,
-      required this.speed,
-      required this.horizontalAccuracy,
-      required this.verticalAccuracy,
-      required this.timestamp,
-      required this.heading});
+  const UserLocation({
+    required this.position,
+    required this.altitude,
+    required this.bearing,
+    required this.speed,
+    required this.horizontalAccuracy,
+    required this.verticalAccuracy,
+    required this.timestamp,
+    required this.heading,
+  });
+}
+
+/// An app-provided location update, pushed into the map's user-location
+/// component via `MapLibreMapController.updateManualLocation`.
+///
+/// Requires the map to be created with
+/// `locationSource: ManualLocationSource()` and `myLocationEnabled: true`.
+///
+/// Every field except [target] is optional, and omitted ones are not sent on.
+/// There is no `heading` field: on both Android and iOS the compass heading
+/// comes from the device sensors. Use [bearing] for the direction of travel.
+@immutable
+class ManualLocationUpdate {
+  /// Creates an app-provided location update.
+  const ManualLocationUpdate({
+    required this.target,
+    this.horizontalAccuracy,
+    this.verticalAccuracy,
+    this.altitude,
+    this.bearing,
+    this.speed,
+    this.timestamp,
+  });
+
+  /// The location's position in latitude and longitude. Required.
+  final LatLng target;
+
+  /// The radius of uncertainty for the location, measured in meters.
+  final double? horizontalAccuracy;
+
+  /// Accuracy of the altitude measurement, in meters.
+  final double? verticalAccuracy;
+
+  /// The location's altitude in meters.
+  final double? altitude;
+
+  /// Direction of travel, measured in degrees (the GPS arrow direction).
+  final double? bearing;
+
+  /// The location's speed in meters per second.
+  final double? speed;
+
+  /// Time the location was observed. Defaults to [DateTime.now] when omitted.
+  final DateTime? timestamp;
+
+  /// Serializes this update for the platform channel.
+  ///
+  /// Mirrors existing conventions: [LatLng] becomes `[lat, lng]`, the timestamp
+  /// becomes epoch milliseconds, and null fields are omitted.
+  Map<String, dynamic> toMap() {
+    final map = <String, dynamic>{
+      'position': <double>[target.latitude, target.longitude],
+      'timestamp': (timestamp ?? DateTime.now()).millisecondsSinceEpoch,
+    };
+
+    void addIfNonNull(String fieldName, dynamic value) {
+      if (value != null) {
+        map[fieldName] = value;
+      }
+    }
+
+    addIfNonNull('horizontalAccuracy', horizontalAccuracy);
+    addIfNonNull('verticalAccuracy', verticalAccuracy);
+    addIfNonNull('altitude', altitude);
+    addIfNonNull('bearing', bearing);
+    addIfNonNull('speed', speed);
+    return map;
+  }
 }
 
 /// Type represents a geomagnetic value, measured in microteslas, relative to a
@@ -257,12 +332,13 @@ class UserHeading {
   /// Returns a timestamp for when the magnetic heading was determined.
   final DateTime timestamp;
 
-  const UserHeading(
-      {required this.magneticHeading,
-      required this.trueHeading,
-      required this.headingAccuracy,
-      required this.x,
-      required this.y,
-      required this.z,
-      required this.timestamp});
+  const UserHeading({
+    required this.magneticHeading,
+    required this.trueHeading,
+    required this.headingAccuracy,
+    required this.x,
+    required this.y,
+    required this.z,
+    required this.timestamp,
+  });
 }

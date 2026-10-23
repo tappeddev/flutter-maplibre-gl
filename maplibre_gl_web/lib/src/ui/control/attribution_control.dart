@@ -1,3 +1,4 @@
+import 'dart:js_interop';
 import 'package:maplibre_gl_web/src/interop/interop.dart';
 import 'package:maplibre_gl_web/src/interop/ui/control/attribution_control_interop.dart';
 import 'package:maplibre_gl_web/src/ui/map.dart';
@@ -7,11 +8,12 @@ class AttributionControlOptions
   factory AttributionControlOptions({
     bool? compact,
     List<String>? customAttribution,
-  }) =>
-      AttributionControlOptions.fromJsObject(AttributionControlOptionsJsImpl(
-        compact: compact,
-        customAttribution: customAttribution,
-      ));
+  }) => AttributionControlOptions.fromJsObject(
+    AttributionControlOptionsJsImpl(
+      compact: compact,
+      customAttribution: customAttribution?.map((s) => s.toJS).toList().toJS,
+    ),
+  );
 
   /// Creates a new AttributionControlOptions from a [jsObject].
   AttributionControlOptions.fromJsObject(super.jsObject) : super.fromJsObject();
@@ -33,7 +35,8 @@ class AttributionControl extends JsObjectWrapper<AttributionControlJsImpl> {
 
   factory AttributionControl(AttributionControlOptions options) =>
       AttributionControl.fromJsObject(
-          AttributionControlJsImpl(options.jsObject));
+        AttributionControlJsImpl(options.jsObject),
+      );
 
   onAdd(MapLibreMap map) => jsObject.onAdd(map.jsObject);
 

@@ -5,12 +5,7 @@
 part of '../maplibre_gl_platform_interface.dart';
 
 /// The camera mode, which determines how the map camera will track the rendered location.
-enum MyLocationTrackingMode {
-  none,
-  tracking,
-  trackingCompass,
-  trackingGps,
-}
+enum MyLocationTrackingMode { none, tracking, trackingCompass, trackingGps }
 
 /// Specifies if and how the user's heading/bearing is rendered in the user location indicator.
 enum MyLocationRenderMode {
@@ -25,23 +20,22 @@ enum MyLocationRenderMode {
 }
 
 /// Compass View Position
-enum CompassViewPosition {
-  topLeft,
-  topRight,
-  bottomLeft,
-  bottomRight,
-}
+enum CompassViewPosition { topLeft, topRight, bottomLeft, bottomRight }
 
 /// Attribution Button Position
-enum AttributionButtonPosition {
-  topLeft,
-  topRight,
-  bottomLeft,
-  bottomRight,
-}
+enum AttributionButtonPosition { topLeft, topRight, bottomLeft, bottomRight }
+
+/// Logo View Position
+enum LogoViewPosition { topLeft, topRight, bottomLeft, bottomRight }
+
+/// Scale Control Position
+enum ScaleControlPosition { topLeft, topRight, bottomLeft, bottomRight }
+
+/// Scale Control Unit
+enum ScaleControlUnit { metric, imperial, nautical }
 
 /// Bounds for the map camera target.
-/// Used with [_MapLibreMapOptions] to wrap a [LatLngBounds] value. This allows
+/// Used with [MapLibreMapOptions] to wrap a [LatLngBounds] value. This allows
 /// distinguishing between specifying an unbounded target (null `LatLngBounds`)
 /// from not specifying anything (null `CameraTargetBounds`).
 @immutable
@@ -77,13 +71,13 @@ class CameraTargetBounds {
 }
 
 /// Preferred bounds for map camera zoom level.
-/// Used with [_MapLibreMapOptions] to wrap min and max zoom. This allows
+/// Used with [MapLibreMapOptions] to wrap min and max zoom. This allows
 /// distinguishing between specifying unbounded zooming (null [minZoom] and
 /// [maxZoom]) from not specifying anything (null [MinMaxZoomPreference]).
 @immutable
 class MinMaxZoomPreference {
   const MinMaxZoomPreference(this.minZoom, this.maxZoom)
-      : assert(minZoom == null || maxZoom == null || minZoom <= maxZoom);
+    : assert(minZoom == null || maxZoom == null || minZoom <= maxZoom);
 
   /// The preferred minimum zoom level or null, if unbounded from below.
   final double? minZoom;
@@ -92,8 +86,10 @@ class MinMaxZoomPreference {
   final double? maxZoom;
 
   /// Unbounded zooming.
-  static const MinMaxZoomPreference unbounded =
-      MinMaxZoomPreference(null, null);
+  static const MinMaxZoomPreference unbounded = MinMaxZoomPreference(
+    null,
+    null,
+  );
 
   dynamic toJson() => <dynamic>[minZoom, maxZoom];
 
