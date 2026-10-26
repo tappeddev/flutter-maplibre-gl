@@ -12,9 +12,6 @@ permissions:
 
 jobs:
   dependency-review:
-    # Forks must enable Dependency Graph in repository settings before opting in
-    # with the repository variable DEPENDENCY_REVIEW_ENABLED=true.
-    if: ${{ !github.event.repository.fork || vars.DEPENDENCY_REVIEW_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: 'Checkout Repository'

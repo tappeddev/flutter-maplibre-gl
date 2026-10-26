@@ -1621,8 +1621,10 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
             let width = args?["width"] as? Int
             let height = args?["height"] as? Int
 
-            let snapshotWidth = width ?? Int(mapView.bounds.width)
-            let snapshotHeight = height ?? Int(mapView.bounds.height)
+            // Sizes are physical pixels, matching Android.
+            let screenScale = mapView.window?.screen.scale ?? UIScreen.main.scale
+            let snapshotWidth = width ?? Int((mapView.bounds.width * screenScale).rounded())
+            let snapshotHeight = height ?? Int((mapView.bounds.height * screenScale).rounded())
             guard snapshotWidth > 0, snapshotHeight > 0,
                   mapView.bounds.width > 0, mapView.bounds.height > 0 else {
                 result(FlutterError(code: "INVALID_SIZE", message: "Snapshot dimensions must be positive", details: nil))
@@ -1654,8 +1656,15 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         DispatchQueue.main.async { [weak self] in
             guard let self = self, self.pendingSnapshot?.id == request.id else { return }
             self.pendingSnapshot = nil
-            let renderer = UIGraphicsImageRenderer(size: request.size)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            let renderer = UIGraphicsImageRenderer(size: request.size, format: format)
             var rendered = false
+            // Leave out on-screen controls, like the Android and MLNMapSnapshotter output.
+            let ornaments: [UIView?] = [mapView.logoView, mapView.attributionButton, mapView.compassView, mapView.scaleBar as? UIView]
+            let hiddenBefore = ornaments.map { $0?.isHidden }
+            ornaments.forEach { $0?.isHidden = true }
+            defer { zip(ornaments, hiddenBefore).forEach { $0.0?.isHidden = $0.1 ?? false } }
             let image = renderer.image { context in
                 context.cgContext.scaleBy(x: request.size.width / mapView.bounds.width,
                                           y: request.size.height / mapView.bounds.height)

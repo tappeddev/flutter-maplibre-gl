@@ -3108,7 +3108,10 @@ final class MapLibreMapController
           if (pendingSnapshotResult != result) return;
           pendingSnapshotResult = null;
           snapshotTimeout = null;
+          // Abandon the active capture too, so a callback that never fires
+          // cannot block later snapshots. Late callbacks release the old queue.
           snapshotCaptures.cancelPending();
+          snapshotCaptures = new SnapshotCaptureQueue();
           result.error("SNAPSHOT_ERROR", "Map did not finish rendering within 10 seconds", null);
         };
         snapshotHandler.postDelayed(snapshotTimeout, 10000);
