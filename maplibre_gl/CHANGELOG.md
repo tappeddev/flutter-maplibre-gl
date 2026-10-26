@@ -1,3 +1,13 @@
+## Unreleased
+
+- Android: `takeSnapshot` works for a style that was set as JSON. The snapshotter
+  was given the style's empty URL, requested it and never returned, so the call
+  timed out on the Dart side.
+- iOS: `takeSnapshot` works for a style that was set as JSON. The separate
+  snapshotter only accepts a style URL, so the style is written to a temporary
+  file and vector sources with inline `tiles` are moved into a temporary
+  TileJSON file. Previously it failed with "URL not supported".
+
 ## [0.27.1](https://github.com/maplibre/flutter-maplibre-gl/compare/v0.27.0...v0.27.1)
 
 ### Fixed

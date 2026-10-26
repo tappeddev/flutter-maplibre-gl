@@ -3083,11 +3083,12 @@ final class MapLibreMapController
           result.error("MAP_NOT_READY", "Map is not ready", null);
           break;
         }
-        String styleUrl = mapLibreMap.getStyle() != null ? mapLibreMap.getStyle().getUri() : null;
-        if (styleUrl == null) {
+        Style snapshotStyle = mapLibreMap.getStyle();
+        if (snapshotStyle == null) {
           result.error("STYLE_NOT_READY", "Map style is not loaded", null);
           break;
         }
+        String styleUrl = snapshotStyle.getUri();
         Map<String, Object> snapshotArgs = (Map<String, Object>) call.arguments;
         Integer width = snapshotArgs != null ? (Integer) snapshotArgs.get("width") : null;
         Integer height = snapshotArgs != null ? (Integer) snapshotArgs.get("height") : null;
@@ -3096,8 +3097,13 @@ final class MapLibreMapController
         int snapshotHeight = height != null ? height : mapView.getHeight();
 
         MapSnapshotter.Options options = new MapSnapshotter.Options(snapshotWidth, snapshotHeight)
-                .withStyle(styleUrl)
                 .withCameraPosition(mapLibreMap.getCameraPosition());
+        if (styleUrl == null || styleUrl.isEmpty()) {
+          // A style set as JSON has no URL, so snapshot the same JSON.
+          options = options.withStyleBuilder(new Style.Builder().fromJson(snapshotStyle.getJson()));
+        } else {
+          options = options.withStyle(styleUrl);
+        }
         if (activeSnapshotter != null) {
           activeSnapshotter.cancel();
         }

@@ -1622,8 +1622,28 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
             activeSnapshotter?.cancel()
 
             let size = CGSize(width: snapshotWidth, height: snapshotHeight)
+            // The snapshotter only accepts a style URL, so a style that was set
+            // as JSON is handed over as a temporary file instead.
+            var snapshotStyleURL = styleURL
+            var temporaryFiles: [URL] = []
+            let loadableSchemes = ["http", "https", "file"]
+            if !loadableSchemes.contains(styleURL.scheme?.lowercased() ?? "") {
+                do {
+                    (snapshotStyleURL, temporaryFiles) = try Self.writeSnapshotStyle(
+                        json: mapView.styleJSON
+                    )
+                } catch {
+                    result(FlutterError(
+                        code: "SNAPSHOT_ERROR",
+                        message: error.localizedDescription,
+                        details: nil
+                    ))
+                    return
+                }
+            }
+
             let options = MLNMapSnapshotOptions(
-                styleURL: styleURL,
+                styleURL: snapshotStyleURL,
                 camera: mapView.camera,
                 size: size
             )
@@ -1635,6 +1655,9 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
 
             snapshotter.start { [weak self] snapshot, error in
                 self?.activeSnapshotter = nil
+                for file in temporaryFiles {
+                    try? FileManager.default.removeItem(at: file)
+                }
 
                 if let error = error {
                     result(FlutterError(
@@ -2737,6 +2760,42 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         } else {
             return URL(string: styleString)
         }
+    }
+
+    /// Writes a JSON style to a temporary file for `MLNMapSnapshotter`.
+    /// Vector sources with inline `tiles` are moved into a TileJSON file
+    /// referenced through `url`, which the snapshotter can resolve.
+    private static func writeSnapshotStyle(json: String) throws -> (URL, [URL]) {
+        guard var style = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any] else {
+            throw NSError(domain: "maplibre_gl", code: 1, userInfo: [NSLocalizedDescriptionKey: "Style is not a JSON object"])
+        }
+        let directory = FileManager.default.temporaryDirectory
+        let id = UUID().uuidString
+        var files: [URL] = []
+
+        if var sources = style["sources"] as? [String: Any] {
+            for (name, value) in sources {
+                guard var source = value as? [String: Any],
+                      source["type"] as? String == "vector",
+                      let tiles = source["tiles"] as? [String] else { continue }
+                var tileJSON: [String: Any] = ["tilejson": "3.0.0", "tiles": tiles]
+                for key in ["minzoom", "maxzoom", "bounds", "scheme"] {
+                    if let entry = source[key] { tileJSON[key] = entry }
+                }
+                let file = directory.appendingPathComponent("maplibre-snapshot-\(id)-\(name).tilejson")
+                try JSONSerialization.data(withJSONObject: tileJSON).write(to: file)
+                files.append(file)
+                source.removeValue(forKey: "tiles")
+                source["url"] = file.absoluteString
+                sources[name] = source
+            }
+            style["sources"] = sources
+        }
+
+        let styleFile = directory.appendingPathComponent("maplibre-snapshot-\(id).json")
+        try JSONSerialization.data(withJSONObject: style).write(to: styleFile)
+        files.append(styleFile)
+        return (styleFile, files)
     }
 
     func setStyleString(styleString: String) {
