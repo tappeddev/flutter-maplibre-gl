@@ -1,5 +1,8 @@
 ## Unreleased
 
+- Android: `takeSnapshot` works for a style that was set as JSON. The snapshotter
+  was given the style's empty URL, requested it and never returned, so the call
+  timed out on the Dart side.
 - iOS: `takeSnapshot` works for a style that was set as JSON. The separate
   snapshotter only accepts a style URL, so the style is written to a temporary
   file and vector sources with inline `tiles` are moved into a temporary
